@@ -1,0 +1,11 @@
+name: water reminder
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -s -H "Content-Type: application/json" -d "{\"content\":\"<@&1567048846364643469> DRINK WATER YOU THIRSTY BITCHES\",\"allowed_mentions\":{\"parse\":[\"roles\"]}}" "${{ secrets.WATER_WEBHOOK }}"
