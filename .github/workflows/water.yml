@@ -1,11 +1,77 @@
 name: water reminder
+
 on:
   schedule:
-    - cron: "0 */3 * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: water-reminder
+  cancel-in-progress: false
+
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          curl -s -H "Content-Type: application/json" -d "{\"content\":\"<@&1567048846364643469> DRINK WATER YOU THIRSTY BITCHES\",\"allowed_mentions\":{\"parse\":[\"roles\"]}}" "${{ secrets.WATER_WEBHOOK }}"
+      - name: Restore last-posted timestamp
+        uses: actions/cache/restore@v4
+        with:
+          path: .state
+          key: water-state-${{ github.run_id }}
+          restore-keys: |
+            water-state-
+
+      - name: Remind the thirsty
+        env:
+          WEBHOOK: ${{ secrets.WATER_WEBHOOK }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${WEBHOOK:-}" ]; then
+            echo "::error::WATER_WEBHOOK secret is not set"
+            exit 1
+          fi
+
+          ROLE="<@&1567048846364643469>"
+          INTERVAL=10800
+          NOW=$(date +%s)
+          LAST=0
+
+          mkdir -p .state
+          if [ -f .state/last ]; then LAST=$(cat .state/last); fi
+          case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+          AGE=$(( NOW - LAST ))
+
+          if [ "$EVENT" != "workflow_dispatch" ] && [ "$AGE" -lt "$INTERVAL" ]; then
+            echo "Skipping: last post was ${AGE}s ago (needs ${INTERVAL}s)"
+            exit 0
+          fi
+
+          MSGS=(
+            "DRINK WATER YOU THIRSTY BITCHES"
+            "hydration check. go drink water."
+            "your kidneys are filing a complaint. water. now."
+            "water. you. immediately."
+            "this is your 3-hourly hydration summons. drink."
+          )
+          IDX=$(( RANDOM % ${#MSGS[@]} ))
+          PICK="${MSGS[$IDX]}"
+
+          curl -fsS --max-time 20 --retry 3 --retry-delay 5 \
+            -H "Content-Type: application/json" \
+            -d "{\"content\":\"${ROLE} ${PICK}\",\"allowed_mentions\":{\"parse\":[\"roles\"]}}" \
+            "$WEBHOOK"
+
+          echo "Posted: ${PICK}"
+          echo "$NOW" > .state/last
+
+      - name: Save last-posted timestamp
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .state
+          key: water-state-${{ github.run_id }}
